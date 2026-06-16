@@ -1,5 +1,65 @@
 const WORKER = 'https://delicate-smoke-ce37.abedtahanpromotions.workers.dev/';
 
+const KEYWORD_TAG_MAP = {
+  fitness:      'Personal Care & Fitness',
+  gym:          'Sports Equipment',
+  treadmill:    'Treadmill',
+  exercise:     'Sports Equipment',
+  workout:      'Sports Equipment',
+  sport:        'Sports Equipment',
+  bike:         'Exercise Bike',
+  elliptical:   'Elliptical',
+  yoga:         'Yoga',
+  pilates:      'Yoga',
+  tv:           'Televisions',
+  television:   'Televisions',
+  laptop:       'Laptops',
+  computer:     'Laptops',
+  phone:        'Smartphones',
+  smartphone:   'Smartphones',
+  iphone:       'iPhone',
+  tablet:       'Tablets',
+  ipad:         'iPad',
+  audio:        'Audio',
+  speaker:      'Speakers',
+  headphone:    'Headphones',
+  headset:      'Headphones',
+  camera:       'Cameras',
+  watch:        'Smart Watch',
+  coffee:       'Coffee Machines',
+  kitchen:      'Small Kitchen Appliances',
+  cooking:      'Small Kitchen Appliances',
+  blender:      'Blenders',
+  fridge:       'Refrigerators',
+  refrigerator: 'Refrigerators',
+  freezer:      'Freezers',
+  washer:       'Washing Machines',
+  washing:      'Washing Machines',
+  vacuum:       'Vacuum Cleaners',
+  gaming:       'Gaming',
+  console:      'Gaming',
+  playstation:  'Gaming',
+  beauty:       'Beauty',
+  hair:         'Hair Care',
+  massage:      'Massage',
+  printer:      'Printers',
+  router:       'Routers',
+  microwave:    'Microwaves',
+  oven:         'Ovens',
+  dishwasher:   'Dishwashers',
+  outdoor:      'Outdoor',
+  grill:        'Grills',
+  aircon:       'Air Conditioners',
+};
+
+function extractTag(query) {
+  const q = query.toLowerCase();
+  for (const [kw, tag] of Object.entries(KEYWORD_TAG_MAP)) {
+    if (q.includes(kw)) return tag;
+  }
+  return null;
+}
+
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -10,29 +70,23 @@ module.exports = async function handler(req, res) {
 
   const { query = '', budget = 0 } = req.query;
 
-  // Build Shopify search filter
+  const tag = extractTag(query);
   let queryFilter = 'status:active';
-  if (query) queryFilter += ` AND (title:*${query}* OR tag:*${query}*)`;
+  if (tag) {
+    queryFilter += ` AND tag:"${tag}"`;
+  } else if (query) {
+    queryFilter += ` AND title:*${query}*`;
+  }
 
   const gqlQuery = `
     query GetProducts($first: Int!, $query: String!) {
       products(first: $first, query: $query) {
         edges {
           node {
-            id
-            title
-            handle
-            vendor
-            tags
-            priceRangeV2 {
-              minVariantPrice { amount currencyCode }
-            }
-            featuredMedia {
-              preview { image { url } }
-            }
-            variants(first: 1) {
-              edges { node { sku price } }
-            }
+            id title handle vendor status tags
+            priceRangeV2 { minVariantPrice { amount currencyCode } }
+            featuredMedia { preview { image { url } } }
+            variants(first: 1) { edges { node { sku price } } }
           }
         }
       }
@@ -65,7 +119,6 @@ module.exports = async function handler(req, res) {
       };
     });
 
-    // Filter by budget with 20% tolerance
     const budgetNum = parseFloat(budget);
     if (budgetNum > 0) products = products.filter(p => p.price <= budgetNum * 1.2);
 
