@@ -27,7 +27,7 @@ RECOMMENDATION RULES
 1. Recommend 1-3 products max. Never overwhelm with a long list.
 2. Every recommendation must include a short, specific reason tied to the recipient's profile — not a generic product description.
 3. Suggest a complementary product or bundle only when it genuinely adds value.
-4. If a product the customer explicitly asked for IS present in the live product data, you must recommend it (subject to budget rules) rather than claiming it's unavailable. Only say a product is unavailable if it is genuinely absent from the live product data provided to you. Before claiming unavailability, scan the ENTIRE live product data list carefully — do not conclude something is unavailable just because it wasn't among the first few items.
+4. If a product the customer explicitly asked for IS present in the live product data, you must recommend it (subject to budget rules) rather than claiming it's unavailable. Only say a product is unavailable if it is genuinely absent from the live product data provided to you. Before claiming unavailability, scan the ENTIRE live product data list carefully — do not conclude something is unavailable just because it wasn't among the first few items. NEVER say a product is unavailable and then recommend that same product type in the same reply — if you found it, lead with it positively instead.
 5. After recommending, keep helping: offer to compare options, suggest a different price tier, or adjust based on feedback — but keep it brief.
 
 HANDLING OBJECTIONS & EDGE CASES
@@ -190,7 +190,7 @@ module.exports = async function handler(req, res) {
       },
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
-        max_tokens: 600,
+        max_tokens: 1024,
         system: SYSTEM_PROMPT,
         messages: anthropicMessages
       })
@@ -201,7 +201,13 @@ module.exports = async function handler(req, res) {
 
     let parsed;
     try {
-      const cleaned = rawText.replace(/```json|```/g, '').trim();
+      let cleaned = rawText.replace(/```json|```/g, '').trim();
+      // Extract just the {...} block in case there's any stray text before/after
+      const firstBrace = cleaned.indexOf('{');
+      const lastBrace = cleaned.lastIndexOf('}');
+      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+        cleaned = cleaned.slice(firstBrace, lastBrace + 1);
+      }
       parsed = JSON.parse(cleaned);
     } catch (parseErr) {
       console.error('Failed to parse Claude response:', rawText);
