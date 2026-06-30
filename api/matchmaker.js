@@ -27,7 +27,7 @@ RECOMMENDATION RULES
 1. Recommend 1-3 products max. Never overwhelm with a long list.
 2. Every recommendation must include a short, specific reason tied to the recipient's profile — not a generic product description.
 3. Suggest a complementary product or bundle only when it genuinely adds value.
-4. If a product the customer explicitly asked for IS present in the live product data, you must recommend it (subject to budget rules) rather than claiming it's unavailable. Only say a product is unavailable if it is genuinely absent from the live product data provided to you.
+4. If a product the customer explicitly asked for IS present in the live product data, you must recommend it (subject to budget rules) rather than claiming it's unavailable. Only say a product is unavailable if it is genuinely absent from the live product data provided to you. Before claiming unavailability, scan the ENTIRE live product data list carefully — do not conclude something is unavailable just because it wasn't among the first few items.
 5. After recommending, keep helping: offer to compare options, suggest a different price tier, or adjust based on feedback — but keep it brief.
 
 HANDLING OBJECTIONS & EDGE CASES
@@ -82,18 +82,17 @@ async function fetchProductData(profile, latestMessage) {
   const interests = profile?.recipient?.interests?.join(' OR tag:') || '';
   const meaningfulKeywords = extractKeywords(latestMessage);
 
-  // Prioritize exact phrase match (e.g. "apple watch") over individual keyword OR-matching,
-  // which previously matched every product containing just "apple" or just "watch".
-  let productFilter = '';
-  if (meaningfulKeywords.length > 1) {
-    productFilter = `title:*${meaningfulKeywords.join(' ')}*`;
-  } else if (meaningfulKeywords.length === 1) {
-    productFilter = `title:*${meaningfulKeywords[0]}*`;
-  }
+  // Shopify's search query syntax doesn't reliably support a wildcard phrase
+  // with a space inside it (e.g. title:*apple watch*). Instead, fetch broadly
+  // using a simple OR of individual keywords, then do exact multi-word
+  // matching in JS, which is reliable regardless of Shopify's query parser.
+  const individualQuery = meaningfulKeywords.length
+    ? meaningfulKeywords.map(k => `title:*${k}*`).join(' OR ')
+    : '';
 
   const filters = [
     interests ? `(tag:${interests})` : '',
-    productFilter ? `(${productFilter})` : ''
+    individualQuery ? `(${individualQuery})` : ''
   ].filter(Boolean).join(' OR ');
 
   const gqlQuery = `
@@ -122,7 +121,23 @@ async function fetchProductData(profile, latestMessage) {
       body: JSON.stringify({ query: gqlQuery })
     });
     const data = await res.json();
-    return data?.data?.products?.edges?.map(e => e.node) || [];
+    const products = data?.data?.products?.edges?.map(e => e.node) || [];
+
+    // Sort so products whose title contains ALL meaningful keywords (e.g. both
+    // "apple" AND "watch") appear first — this guarantees the model sees the
+    // most relevant matches even if the 50-result cap would otherwise push
+    // them out, and even though Shopify's own query only OR-matched individually.
+    if (meaningfulKeywords.length > 1) {
+      products.sort((a, b) => {
+        const aTitle = (a.title || '').toLowerCase();
+        const bTitle = (b.title || '').toLowerCase();
+        const aMatchesAll = meaningfulKeywords.every(k => aTitle.includes(k)) ? 1 : 0;
+        const bMatchesAll = meaningfulKeywords.every(k => bTitle.includes(k)) ? 1 : 0;
+        return bMatchesAll - aMatchesAll;
+      });
+    }
+
+    return products;
   } catch (err) {
     console.error('Product fetch failed:', err);
     return [];
