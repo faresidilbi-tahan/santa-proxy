@@ -26,7 +26,7 @@ RECOMMENDATION RULES
 1. Recommend 1-3 products max. Never overwhelm with a long list.
 2. Every recommendation must include a short, specific reason tied to the recipient's profile — not a generic product description.
 3. Suggest a complementary product or bundle only when it genuinely adds value.
-4. If a product is requested but out of stock or doesn't exist, say so plainly and offer the closest real alternative. Never invent products or specs.
+4. If a product the customer explicitly asked for IS present in the live product data, you must recommend it (subject to budget rules) rather than claiming it's unavailable. Only say a product is unavailable if it is genuinely absent from the live product data provided to you.
 5. After recommending, keep helping: offer to compare options, suggest a different price tier, or adjust based on feedback.
 
 HANDLING OBJECTIONS & EDGE CASES
@@ -55,7 +55,7 @@ Respond ONLY with a JSON object, no preamble, no markdown fences:
   "escalate_to_whatsapp": false
 }
 
-The "recommended_products" array must contain ONLY the handle (exact "handle" field) of products that exist in the live product data provided to you. Never invent a handle.
+The "recommended_products" array must contain ONLY the exact "handle" field of products that exist in the live product data provided to you. Never invent a handle.
 
 Always return the full updated profile object, carrying forward everything from the previous turn and only updating fields with new information. Never null out a field that was already filled unless the customer explicitly corrects it.
 
@@ -64,11 +64,34 @@ Only reference products and specs from the live product data provided to you. Ne
 
 const SHOPIFY_WORKER_URL = 'https://delicate-smoke-ce37.abedtahanpromotions.workers.dev/';
 
-async function fetchProductData(profile) {
+const STOPWORDS = new Set([
+  'the', 'for', 'and', 'with', 'want', 'need', 'gift', 'below', 'budget',
+  'dad', 'mom', 'him', 'her', 'his', 'my', 'christmas', 'dollar', 'dollars',
+  'under', 'about', 'around', 'something', 'like', 'please', 'thanks',
+  'thank', 'you', 'hes', 'shes', 'its', 'that', 'this', 'have', 'has'
+]);
+
+function extractKeywords(text) {
+  const words = (text || '').toLowerCase().match(/[a-z0-9]+/g) || [];
+  return words.filter(w => w.length > 2 && !STOPWORDS.has(w));
+}
+
+async function fetchProductData(profile, latestMessage) {
   const interests = profile?.recipient?.interests?.join(' OR tag:') || '';
+
+  const meaningfulKeywords = extractKeywords(latestMessage);
+  const keywordQuery = meaningfulKeywords.length
+    ? meaningfulKeywords.map(k => `title:*${k}*`).join(' OR ')
+    : '';
+
+  const filters = [
+    interests ? `(tag:${interests})` : '',
+    keywordQuery ? `(${keywordQuery})` : ''
+  ].filter(Boolean).join(' OR ');
+
   const gqlQuery = `
     query {
-      products(first: 20, query: "status:active${interests ? ' AND (tag:' + interests + ')' : ''}") {
+      products(first: 20, query: "status:active${filters ? ' AND (' + filters + ')' : ''}") {
         edges {
           node {
             handle
@@ -119,7 +142,8 @@ module.exports = async function handler(req, res) {
       return res.status(400).json({ error: 'messages array is required' });
     }
 
-    const products = await fetchProductData(profile || {});
+    const latestMessage = messages[messages.length - 1]?.content || '';
+    const products = await fetchProductData(profile || {}, latestMessage);
 
     const productContext = `LIVE PRODUCT DATA (only use these, never invent products):\n${JSON.stringify(products, null, 2)}`;
 
