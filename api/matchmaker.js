@@ -59,8 +59,6 @@ Only reference products and specs from the live product data provided to you. Ne
 const SHOPIFY_WORKER_URL = 'https://delicate-smoke-ce37.abedtahanpromotions.workers.dev/';
 
 async function fetchProductData(profile) {
-  // Build a simple tag/category query based on whatever the profile knows so far.
-  // Adjust the GraphQL query/tags to match your actual store taxonomy.
   const interests = profile?.recipient?.interests?.join(' OR tag:') || '';
   const gqlQuery = `
     query {
@@ -93,7 +91,6 @@ async function fetchProductData(profile) {
 }
 
 module.exports = async function handler(req, res) {
-  // CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -108,8 +105,6 @@ module.exports = async function handler(req, res) {
 
   try {
     const { messages, profile } = req.body;
-    // messages: array of { role: 'user' | 'assistant', content: string }
-    // profile: the hidden profile JSON object from the previous turn (or empty on first turn)
 
     if (!messages || !Array.isArray(messages)) {
       return res.status(400).json({ error: 'messages array is required' });
@@ -162,4 +157,6 @@ module.exports = async function handler(req, res) {
 
   } catch (err) {
     console.error('Matchmaker error:', err);
-    return res.status(500).json({
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
