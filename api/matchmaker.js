@@ -78,9 +78,9 @@ function extractKeywords(text) {
   return words.filter(w => w.length > 2 && !STOPWORDS.has(w));
 }
 
-async function fetchProductData(profile, latestMessage) {
+async function fetchProductData(profile, conversationText) {
   const interests = profile?.recipient?.interests?.join(' OR tag:') || '';
-  const meaningfulKeywords = extractKeywords(latestMessage);
+  const meaningfulKeywords = extractKeywords(conversationText);
 
   // Shopify's search query syntax doesn't reliably support a wildcard phrase
   // with a space inside it (e.g. title:*apple watch*). Instead, fetch broadly
@@ -164,8 +164,11 @@ module.exports = async function handler(req, res) {
       return res.status(400).json({ error: 'messages array is required' });
     }
 
-    const latestMessage = messages[messages.length - 1]?.content || '';
-    const products = await fetchProductData(profile || {}, latestMessage);
+    const userMessagesText = messages
+      .filter(m => m.role === 'user')
+      .map(m => m.content)
+      .join(' ');
+    const products = await fetchProductData(profile || {}, userMessagesText);
 
     const productContext = `LIVE PRODUCT DATA (only use these, never invent products):\n${JSON.stringify(products, null, 2)}`;
 
