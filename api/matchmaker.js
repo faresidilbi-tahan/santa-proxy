@@ -22,6 +22,7 @@ CONVERSATION RULES
 6. Update shopping_style only when you have a real signal — don't guess without one.
 
 RECOMMENDATION RULES
+0. STRICT BUDGET ENFORCEMENT: If the customer has stated a budget, you must NEVER recommend a product whose price (from the live product data) exceeds that budget. Check the actual price field against the stated budget before including any product. If no product fits within budget, say so honestly and offer the closest cheaper alternative instead of exceeding it. If the customer's budget appears to be in a different currency than the store's currency (provided in the product data), convert appropriately using a reasonable estimate and state your assumption briefly.
 1. Recommend 1-3 products max. Never overwhelm with a long list.
 2. Every recommendation must include a short, specific reason tied to the recipient's profile — not a generic product description.
 3. Suggest a complementary product or bundle only when it genuinely adds value.
@@ -54,10 +55,12 @@ Respond ONLY with a JSON object, no preamble, no markdown fences:
   "escalate_to_whatsapp": false
 }
 
+The "recommended_products" array must contain ONLY the handle (exact "handle" field) of products that exist in the live product data provided to you. Never invent a handle.
+
 Always return the full updated profile object, carrying forward everything from the previous turn and only updating fields with new information. Never null out a field that was already filled unless the customer explicitly corrects it.
 
 DATA INTEGRITY
-Only reference products and specs from the live product data provided to you. Never hallucinate a product, price, or spec. If you don't have enough product data to answer something, say so honestly rather than guessing.`;
+Only reference products and specs from the live product data provided to you. Never hallucinate a product, price, or spec. The currency of all prices is provided in the product data — use it correctly when reasoning about budget.`;
 
 const SHOPIFY_WORKER_URL = 'https://delicate-smoke-ce37.abedtahanpromotions.workers.dev/';
 
@@ -71,8 +74,11 @@ async function fetchProductData(profile) {
             handle
             title
             tags
-            priceRange { minVariantPrice { amount } }
+            priceRange {
+              minVariantPrice { amount currencyCode }
+            }
             description
+            featuredImage { url altText }
           }
         }
       }
@@ -154,6 +160,22 @@ module.exports = async function handler(req, res) {
     } catch (parseErr) {
       console.error('Failed to parse Claude response:', rawText);
       return res.status(500).json({ error: 'Failed to parse AI response', raw: rawText });
+    }
+
+    // Hydrate recommended product handles into full product objects (with image) for the frontend
+    if (parsed.recommended_products && Array.isArray(parsed.recommended_products)) {
+      const hydrated = parsed.recommended_products
+        .map(handle => products.find(p => p.handle === handle))
+        .filter(Boolean)
+        .map(p => ({
+          handle: p.handle,
+          title: p.title,
+          price: p.priceRange?.minVariantPrice?.amount || null,
+          currency: p.priceRange?.minVariantPrice?.currencyCode || null,
+          image: p.featuredImage?.url || null,
+          imageAlt: p.featuredImage?.altText || p.title
+        }));
+      parsed.recommended_products = hydrated;
     }
 
     return res.status(200).json(parsed);
