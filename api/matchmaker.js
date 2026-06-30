@@ -20,6 +20,7 @@ CONVERSATION RULES
    - explicit low budget mentioned → budget-expert: respect budget strictly, don't upsell
    - none of the above clearly → gift-expert: balanced, standard pacing
 6. Update shopping_style only when you have a real signal — don't guess without one.
+7. Keep every reply short — 2-4 sentences max, unless explicitly comparing multiple products in detail. Never write long paragraphs. Get to the point fast, like a helpful salesperson, not an essay.
 
 RECOMMENDATION RULES
 0. STRICT BUDGET ENFORCEMENT: If the customer has stated a budget, you must NEVER recommend a product whose price (from the live product data) exceeds that budget. Check the actual price field against the stated budget before including any product. If no product fits within budget, say so honestly and offer the closest cheaper alternative instead of exceeding it. If the customer's budget appears to be in a different currency than the store's currency (provided in the product data), convert appropriately using a reasonable estimate and state your assumption briefly.
@@ -27,7 +28,7 @@ RECOMMENDATION RULES
 2. Every recommendation must include a short, specific reason tied to the recipient's profile — not a generic product description.
 3. Suggest a complementary product or bundle only when it genuinely adds value.
 4. If a product the customer explicitly asked for IS present in the live product data, you must recommend it (subject to budget rules) rather than claiming it's unavailable. Only say a product is unavailable if it is genuinely absent from the live product data provided to you.
-5. After recommending, keep helping: offer to compare options, suggest a different price tier, or adjust based on feedback.
+5. After recommending, keep helping: offer to compare options, suggest a different price tier, or adjust based on feedback — but keep it brief.
 
 HANDLING OBJECTIONS & EDGE CASES
 - If the customer hesitates, ask what's giving them pause rather than repeating the same suggestion.
@@ -68,7 +69,8 @@ const STOPWORDS = new Set([
   'the', 'for', 'and', 'with', 'want', 'need', 'gift', 'below', 'budget',
   'dad', 'mom', 'him', 'her', 'his', 'my', 'christmas', 'dollar', 'dollars',
   'under', 'about', 'around', 'something', 'like', 'please', 'thanks',
-  'thank', 'you', 'hes', 'shes', 'its', 'that', 'this', 'have', 'has'
+  'thank', 'you', 'hes', 'shes', 'its', 'that', 'this', 'have', 'has',
+  'suggest', 'fgor'
 ]);
 
 function extractKeywords(text) {
@@ -78,20 +80,25 @@ function extractKeywords(text) {
 
 async function fetchProductData(profile, latestMessage) {
   const interests = profile?.recipient?.interests?.join(' OR tag:') || '';
-
   const meaningfulKeywords = extractKeywords(latestMessage);
-  const keywordQuery = meaningfulKeywords.length
-    ? meaningfulKeywords.map(k => `title:*${k}*`).join(' OR ')
-    : '';
+
+  // Prioritize exact phrase match (e.g. "apple watch") over individual keyword OR-matching,
+  // which previously matched every product containing just "apple" or just "watch".
+  let productFilter = '';
+  if (meaningfulKeywords.length > 1) {
+    productFilter = `title:*${meaningfulKeywords.join(' ')}*`;
+  } else if (meaningfulKeywords.length === 1) {
+    productFilter = `title:*${meaningfulKeywords[0]}*`;
+  }
 
   const filters = [
     interests ? `(tag:${interests})` : '',
-    keywordQuery ? `(${keywordQuery})` : ''
+    productFilter ? `(${productFilter})` : ''
   ].filter(Boolean).join(' OR ');
 
   const gqlQuery = `
     query {
-      products(first: 20, query: "status:active${filters ? ' AND (' + filters + ')' : ''}") {
+      products(first: 50, query: "status:active${filters ? ' AND (' + filters + ')' : ''}") {
         edges {
           node {
             handle
